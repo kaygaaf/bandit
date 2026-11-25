@@ -481,19 +481,25 @@ def _parse_nosec_comment(comment):
         # there was no nosec comment
         return None
 
-    matches = found_no_sec_comment.groupdict()
-    nosec_tests = matches.get("tests", set())
+    nosec_tests = found_no_sec_comment.group("tests")
+    # empty set indicates a nosec comment without specific test ids
+    if not nosec_tests or not nosec_tests.strip():
+        return set()
 
-    # empty set indicates that there was a nosec comment without specific
-    # test ids or names
+    extman = extension_loader.MANAGER
     test_ids = set()
-    if nosec_tests:
-        extman = extension_loader.MANAGER
-        # lookup tests by short code or name
-        for test in NOSEC_COMMENT_TESTS.finditer(nosec_tests):
-            test_match = test.group(1)
-            test_id = _find_test_id_from_nosec_string(extman, test_match)
-            if test_id:
-                test_ids.add(test_id)
+    named_missing = False
+    for test in NOSEC_COMMENT_TESTS.finditer(nosec_tests):
+        token = test.group(1)
+        test_id = _find_test_id_from_nosec_string(extman, token)
+        if test_id:
+            test_ids.add(test_id)
+            continue
+        # B999 or not_a_real_test. A note such as TODO is not a list.
+        if re.fullmatch(r"B\d+", token, re.IGNORECASE) or "_" in token:
+            named_missing = True
 
+    # A list that names nothing real is not a blanket nosec.
+    if named_missing and not test_ids:
+        return None
     return test_ids
